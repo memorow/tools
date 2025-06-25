@@ -20,7 +20,8 @@
     }
     .line-block {
       border: 1px solid #aaa;
-      padding: 5px;
+      /* padding: 5px; */
+      padding: 5px 15px;
       margin: 10px 0;
       background: #f9f9f9;
       display: flex;
@@ -45,13 +46,25 @@
     .incorrect {
       background: #ccc !important;
     }
+
+    body.flash-success {
+      animation: flashGreen 0.8s ease-in-out;
+    }
+
+    @keyframes flashGreen {
+      0% { background-color: #d4edda; }
+      100% { background-color: white; }
+    }
   </style>
 </head>
 <body>
 
-<h3>選択結合モード暗記ツール</h3>
+<h3>暗記ツール</h3>
+
+<div>
+  <input type="file" id="fileInput" accept=".txt">
+</div>
 <textarea id="inputText" placeholder="例: これは@@最初の@@文です\n次の@@行です"></textarea><br>
-<input type="file" id="fileInput" accept=".txt">
 <button onclick="startGame()">スタート</button>
 <button onclick="showInput()">再表示</button>
 
@@ -199,7 +212,6 @@ function updateAllProgressStyles() {
     const currentText = first ? first.dataset.words : "";
     const correctText = originalData[index].join("@@");
 
-    // 初期化
     items.forEach(el => {
       el.classList.remove("in-progress", "merged");
     });
@@ -208,7 +220,7 @@ function updateAllProgressStyles() {
       items.length === 1 &&
       visualIndex === index &&
       currentText === correctText &&
-      allPreviousMerged // ← ここを追加
+      allPreviousMerged
     );
 
     if (isMerged) {
@@ -225,9 +237,31 @@ function updateAllProgressStyles() {
       allPreviousMerged = false;
     }
   });
+
+  if (checkAllMerged()) {
+    document.body.classList.add("flash-success");
+    setTimeout(() => {
+      document.body.classList.remove("flash-success");
+    }, 800);
+  }
 }
 
-
+function checkAllMerged() {
+  const gameArea = document.getElementById("gameArea");
+  const lines = Array.from(gameArea.children);
+  return lines.every(lineDiv => {
+    const index = parseInt(lineDiv.dataset.index);
+    const items = lineDiv.querySelectorAll(".inline-item");
+    const first = items[0];
+    const currentText = first ? first.dataset.words : "";
+    const correctText = originalData[index].join("@@");
+    return (
+      items.length === 1 &&
+      currentText === correctText &&
+      Array.from(first.classList).includes("merged")
+    );
+  });
+}
 </script>
 
 </body>
