@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>選択結合モード暗記ツール</title>
+  <title>暗記ツール</title>
+  <!-- PWA対応の追加要素 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#d0ebff">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
     body {
       font-family: sans-serif;
@@ -71,6 +77,13 @@
 <div id="gameArea"></div>
 
 <script>
+// Service Worker 登録
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js')
+    .then(reg => console.log('SW登録成功:', reg))
+    .catch(err => console.warn('SW登録失敗:', err));
+}
+
 let originalData = [];
 let selectedLine = null;
 
@@ -262,6 +275,9 @@ function checkAllMerged() {
     );
   });
 }
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+  window.location.reload(); // SW切り替え時にリロード
+});
 </script>
 
 </body>
