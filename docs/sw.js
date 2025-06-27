@@ -1,4 +1,4 @@
-const CACHE_NAME = 'memorow-cache-v2';
+const CACHE_NAME = 'memorow-cache-v3';
 const urlsToCache = [
   'memorow.html',
   'manifest.json',
