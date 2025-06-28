@@ -4,119 +4,55 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>暗記ツール</title>
-
   <style>
-    /* ---------- 画面全体 ---------- */
     body { font-family: sans-serif; padding: 20px; }
     textarea { width: 100%; height: 100px; font-size: .9rem; }
     button { font-size: .9rem; margin: 5px 3px; }
-
-    /* ---------- 行ブロック ---------- */
     .line-block {
-      border: 1px solid #aaa;
-      padding: 5px 15px;
-      margin: 10px 0;
-      background: #f9f9f9;
-      display: flex;
-      flex-wrap: wrap;
-      cursor: pointer;
-      transition: background-color .2s, border .2s;
-      user-select: none;
+      border: 1px solid #aaa; padding: 5px 15px; margin: 10px 0;
+      background: #f9f9f9; display: flex; flex-wrap: wrap; cursor: pointer;
+      transition: background-color .2s, border .2s; user-select: none;
     }
-
-    /* ロック済み行（クリック不可・余白縮小） */
-    .locked-line {
-      background: #fff !important;
-      border: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      cursor: default;
-    }
-
-    /* ---------- 語句スパン ---------- */
+    .locked-line { background: #fff !important; border: none !important;
+      padding: 0 !important; margin: 0 !important; cursor: default; }
     .inline-item {
-      margin: 3px;
-      padding: 6px 10px;
-      background: #eee;
-      border: 1px solid #888;
-      cursor: pointer;
-      transition: border .2s, padding .2s;
-      user-select: none;
+      margin: 3px; padding: 6px 10px; background: #eee; border: 1px solid #888;
+      cursor: pointer; transition: border .2s, padding .2s; user-select: none;
     }
-
-    /* 結合完了語句（装飾オフ） */
-    .merged {
-      background: #fff !important;
-      border: none !important;
-      padding: 0 !important;
-    }
-
-    /* 結合進行中語句（薄青ハイライト） */
-    .in-progress {
-      background: #d0ebff !important;
-      display: block;
-      width: 100%;
-    }
-
-    /* 誤答ハイライト */
+    .strike  { text-decoration: line-through; opacity: .6; pointer-events: none; }
+    .merged  { background: #fff !important; border: none !important; padding: 0 !important; }
+    .in-progress { background: #d0ebff !important; display: block; width: 100%; }
     .incorrect-line, .incorrect {
-      background: #ffd6d6 !important;
-      animation: flashRed .3s ease-in-out;
+      background: #ffd6d6 !important; animation: flashRed .3s ease-in-out;
     }
-
-    /* 全問正解時のフラッシュ */
+    .merged-part  { font-weight: normal; color: #000; }
+    .newly-merged { font-weight: bold;   color: #0077cc; }
     body.flash-success { animation: flashGreen .8s ease-in-out; }
-
     @keyframes flashGreen { 0% { background:#d4edda; } 100% { background:white; } }
     @keyframes flashRed   { 0% { background:#ffd6d6; } 100% { background:#eee;    } }
   </style>
 </head>
-
 <body>
-  <h3>暗記ツール</h3>
+<h3>暗記ツール</h3>
 
-  <!-- 入力テキスト or ファイル読込 -->
-  <div><input type="file" id="fileInput" accept=".txt" /></div>
-  <textarea id="inputText" placeholder="例: これは@@最初の@@文です
-次の@@行です"></textarea><br/>
-
-  <!-- 操作ボタン -->
-  <button id="startBtn">スタート</button>
-  <button id="showBtn">問題文表示</button>
-
-  <!-- ゲームエリア -->
-  <div id="gameArea"></div>
+<div><input type="file" id="fileInput" accept=".txt" /></div>
+<textarea id="inputText" placeholder="例: これは@@最初の@@文です\n次の@@行です"></textarea><br/>
+<button id="startBtn">スタート</button>
+<button id="showBtn">問題文表示</button>
+<div id="gameArea"></div>
 
 <script>
-/* ---------------------------------------------
-   行選択 ＋ 語句結合ツール本体
-   変更点：
-     ・語句クリック時の stopPropagation を削除し
-       行クリックとのバブル共存を許可
-----------------------------------------------*/
 "use strict";
-
-/* ---------- 変数 ---------- */
-let originalData = [];           // 元の2次元配列データ
-let currentTargetIndex = 0;      // 今ロックすべき行インデックス
-const lineClickHandlers = new Map(); // 行に紐づくクリックHandler
-
-/* ---------- ユーティリティ ---------- */
-function shuffleArray(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
-
-/* ---------- DOM要素 ---------- */
+let originalData = [];
+let currentTargetIndex = 0;
+const lineClickHandlers = new Map();
 const fileInput = document.getElementById("fileInput");
-const inputText = document.getElementById("inputText");
-const startBtn  = document.getElementById("startBtn");
-const showBtn   = document.getElementById("showBtn");
-const gameArea  = document.getElementById("gameArea");
+const inputText  = document.getElementById("inputText");
+const startBtn   = document.getElementById("startBtn");
+const showBtn    = document.getElementById("showBtn");
+const gameArea   = document.getElementById("gameArea");
 
-/* ---------- ファイル読込 ---------- */
+/* ---------- ファイル読み込み ---------- */
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -125,77 +61,77 @@ fileInput.addEventListener("change", e => {
   reader.readAsText(file, "UTF-8");
 });
 
+/* ---------- 汎用ユーティリティ ---------- */
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
 /* ---------- ゲーム開始 ---------- */
 function startGame() {
   const text = inputText.value.trim();
   if (!text) return;
 
-  /* 初期化 */
   currentTargetIndex = 0;
   originalData = text.split("\n").map(l => l.split("@@"));
+
   gameArea.innerHTML = "";
   lineClickHandlers.clear();
 
-  /* 行シャッフル */
-  const shuffled = [...originalData];
-  shuffleArray(shuffled);
+  /* 4〜6行単位でブロックをシャッフル */
+  const shuffled = [];
+  let i = 0;
+  while (i < originalData.length) {
+    const blockSize = Math.floor(Math.random() * 3) + 4; // 4--6
+    const block = originalData.slice(i, i + blockSize);
+    shuffleArray(block);
+    shuffled.push(...block);
+    i += blockSize;
+  }
 
-  /* 行生成 */
+  /* DOM 生成 */
   shuffled.forEach(line => {
     const lineDiv = document.createElement("div");
     lineDiv.className = "line-block";
-    lineDiv.dataset.index = originalData.indexOf(line); // 正解位置
+    lineDiv.dataset.index = originalData.indexOf(line);
 
-    /* 行クリックハンドラ登録 */
-    const handler = () => onLineClick(lineDiv);
-    lineClickHandlers.set(lineDiv, handler);
-    lineDiv.addEventListener("click", handler);
+    const clickHandler = () => onLineClick(lineDiv);
+    lineClickHandlers.set(lineDiv, clickHandler);
+    lineDiv.addEventListener("click", clickHandler);
 
-    /* 語句シャッフル（先頭は固定） */
     const [head, ...rest] = line;
     const restShuffled = [...rest];
     shuffleArray(restShuffled);
 
-    /* 語句スパン生成 */
     [head, ...restShuffled].forEach(word => {
       const span = document.createElement("span");
-      span.className     = "inline-item";
-      span.textContent   = word;
-      span.dataset.words = word; // 結合済み文字列
-
-      /* ★ stopPropagation を削除して行クリックと共存させる */
+      span.className = "inline-item";
+      span.textContent = word;
+      span.dataset.words = word;
       span.addEventListener("click", () => onWordClick(span));
-
       lineDiv.appendChild(span);
     });
-
     gameArea.appendChild(lineDiv);
   });
 
-  /* 入力枠を隠す・スタイル初期反映 */
   inputText.style.display = "none";
   refreshStyles();
-
-  /* ---------- 自動ロック判定 ---------- */
   checkAutoLock();
 }
 
-startBtn.addEventListener("click", startGame);
-showBtn.addEventListener("click", () => { inputText.style.display = "block"; });
-
-/* ---------- 行クリック処理 ---------- */
+/* ---------- 行クリック ---------- */
 function onLineClick(lineDiv) {
-  /* 既にロックなら無視 */
   if (lineDiv.classList.contains("locked-line")) return;
 
   const expected = currentTargetIndex;
   const actual   = Number(lineDiv.dataset.index);
 
-  /* 正しい行？ */
   if (actual === expected) {
-    lockLine(lineDiv); // 手動ロック
+    lockLine(lineDiv);
 
-    /* 行が語句結合済みならターゲット進行 */
+    /* 語句数が1つなら即正解扱い */
     const first = lineDiv.querySelector(".inline-item");
     const mergedLine =
       lineDiv.querySelectorAll(".inline-item").length === 1 &&
@@ -203,78 +139,79 @@ function onLineClick(lineDiv) {
 
     if (mergedLine) {
       currentTargetIndex++;
-      if (currentTargetIndex === originalData.length && allMerged()) {
-        flashSuccess();
-      }
+      if (currentTargetIndex === originalData.length && allMerged()) flashSuccess();
     }
-
     refreshStyles();
-    checkAutoLock(); // 次行の自動ロック判定
+    checkAutoLock();
   } else {
-    /* 誤クリック時のエフェクト */
+    /* 誤クリック演出 */
     lineDiv.classList.add("incorrect-line");
     setTimeout(() => lineDiv.classList.remove("incorrect-line"), 500);
   }
 }
 
-/* ---------- 行ロック処理 ---------- */
+/* ---------- 行をロック ---------- */
 function lockLine(lineDiv) {
-  /* スタイル更新 */
   lineDiv.classList.add("locked-line");
   lineDiv.style.cursor = "default";
-
-  /* 行クリック無効化 */
   const handler = lineClickHandlers.get(lineDiv);
   if (handler) {
     lineDiv.removeEventListener("click", handler);
     lineClickHandlers.delete(lineDiv);
   }
-
-  /* 正しい位置へ移動 */
+  /* 視覚上も正しい位置へ移動 */
   gameArea.insertBefore(lineDiv, gameArea.children[currentTargetIndex]);
-
-  /* ロック直後にチェック */
   refreshStyles();
 }
 
-/* ---------- 語句クリック処理 ---------- */
+/* ---------- 語句クリック ---------- */
 function onWordClick(span) {
   const lineDiv = span.parentNode;
+  if (!lineDiv.classList.contains("locked-line")) return; // 未ロック行は無視
 
-  /* 未ロック行では語句結合できない → 代わりに行クリックが発火する */
-  if (!lineDiv.classList.contains("locked-line")) return;
+  const lineIdx = Number(lineDiv.dataset.index);
+  const answer  = originalData[lineIdx];
 
-  const lineIdx    = Number(lineDiv.dataset.index);
-  const answer     = originalData[lineIdx];
   const firstSpan  = lineDiv.querySelector(".inline-item");
   const currentArr = firstSpan.dataset.words.split("@@");
-  const nextWord   = answer[currentArr.length]; // 次に結合すべき語句
+  const nextWord   = answer[currentArr.length];
 
-  /* 先頭 or 既に結合済みなら無視 */
-  if (span === firstSpan || span.classList.contains("merged")) return;
+  /* クリック不可条件 */
+  if (span === firstSpan || span.classList.contains("merged") || span.classList.contains("strike")) return;
 
+  /* 正しい語句を選択した場合 */
   if (span.textContent === nextWord) {
-    /* 正しい語句を選択 → 結合 */
-    firstSpan.dataset.words += "@@" + nextWord;
-    firstSpan.textContent   += nextWord;
-    lineDiv.removeChild(span); // スパン削除
+    const previousWords = currentArr.join("@@");
+    firstSpan.dataset.words = previousWords + "@@" + nextWord;
+
+    firstSpan.innerHTML =
+      `<span class="merged-part">${previousWords.replaceAll('@@', '')}</span>` +
+      `<span class="newly-merged">${nextWord}</span>`;
+
+    span.classList.add("strike");
+
+    /* 結合完了したら余分な span を削除 */
+    const mergedFinished = firstSpan.dataset.words === answer.join("@@");
+    if (mergedFinished) {
+      [...lineDiv.querySelectorAll(".inline-item")].forEach(item => {
+        if (item !== firstSpan) lineDiv.removeChild(item);
+      });
+    }
+
     refreshStyles();
 
-    /* 行が完全結合？ & 現ターゲット行？ */
+    /* 行が完全正解になったら次へ */
     const allMergedInLine =
-      firstSpan.dataset.words === answer.join("@@") &&
-      lineDiv.querySelectorAll(".inline-item").length === 1;
+      mergedFinished && lineDiv.querySelectorAll(".inline-item").length === 1;
 
     if (allMergedInLine && lineIdx === currentTargetIndex) {
-      currentTargetIndex++;     // 次の行へ
+      currentTargetIndex++;
       refreshStyles();
-      if (currentTargetIndex === originalData.length && allMerged()) {
-        flashSuccess();
-      }
-      checkAutoLock();          // 進行後の自動ロック判定
+      if (currentTargetIndex === originalData.length && allMerged()) flashSuccess();
+      checkAutoLock();
     }
   } else {
-    /* 誤った語句をクリック */
+    /* 誤語句演出 */
     span.classList.add("incorrect");
     setTimeout(() => span.classList.remove("incorrect"), 500);
   }
@@ -284,46 +221,44 @@ function onWordClick(span) {
 function checkAutoLock() {
   while (true) {
     const lineDiv = gameArea.children[currentTargetIndex];
-    if (!lineDiv) break; // 末尾
+    if (!lineDiv) break;
 
-    const idx       = Number(lineDiv.dataset.index);
-    const wordCount = lineDiv.querySelectorAll(".inline-item").length;
-    const isLocked  = lineDiv.classList.contains("locked-line");
-    const visualIdx = [...gameArea.children].indexOf(lineDiv);
+    const idx        = Number(lineDiv.dataset.index);
+    const wordCount  = lineDiv.querySelectorAll(".inline-item").length;
+    const isLocked   = lineDiv.classList.contains("locked-line");
+    const visualIdx  = [...gameArea.children].indexOf(lineDiv);
 
-    /* 条件
-         1. 表示位置 === 正しい行
-         2. 未ロック
-         3. 語句が2語以上
-       → 自動ロック                                   */
+    /* 語句が2語以上かつ未ロックの場合のみ自動ロックの対象 */
     if (idx === currentTargetIndex &&
         visualIdx === currentTargetIndex &&
-        !isLocked &&
-        wordCount > 1) {
-      lockLine(lineDiv);  // 自動ロック
+        !isLocked && wordCount > 1) {
+      lockLine(lineDiv);
     } else {
-      break; // 条件を満たさなくなったら終了
+      break;
     }
   }
 }
 
-/* ---------- スタイル＆進行状況を更新 ---------- */
+/* ---------- スタイル更新 ---------- */
 function refreshStyles() {
   const lines = [...gameArea.children];
-  let allPrevMerged = true;
+  let allPrevMerged = true; // 先頭から currentTargetIndex-1 まですべて merged & locked なら true
 
   lines.forEach((lineDiv, visualIdx) => {
-    const idx        = Number(lineDiv.dataset.index);
-    const items      = lineDiv.querySelectorAll(".inline-item");
-    const first      = items[0];
+    const idx      = Number(lineDiv.dataset.index);
+    const items    = lineDiv.querySelectorAll(".inline-item");
+    const first    = items[0];
+    const isLocked = lineDiv.classList.contains("locked-line");
+
     const currentStr = first ? first.dataset.words : "";
     const correctStr = originalData[idx].join("@@");
 
-    /* リセット */
+    /* スタイル初期化 */
     items.forEach(el => el.classList.remove("in-progress", "merged"));
 
-    /* 全結合済み行？ */
+    /* === 完全結合判定 === */
     const fullyMerged =
+      isLocked &&                           // ★行がロック済み
       items.length === 1 &&
       currentStr === correctStr &&
       visualIdx === idx &&
@@ -331,36 +266,56 @@ function refreshStyles() {
 
     if (fullyMerged) {
       first.classList.add("merged");
-    } else if (
-      allPrevMerged &&
-      visualIdx === idx &&
-      correctStr.startsWith(currentStr) &&
-      currentStr
-    ) {
+      first.textContent = currentStr.replaceAll('@@', '');
+    }
+    /* === 途中結合判定 === */
+    else if (isLocked &&                  // ★行がロック済みであることが前提
+             allPrevMerged &&
+             visualIdx === idx &&
+             correctStr.startsWith(currentStr) &&
+             currentStr) {
       first.classList.add("in-progress");
       allPrevMerged = false;
     } else {
       allPrevMerged = false;
     }
+
+    /* 最新結合語のハイライト描画（merged 完了以外の場合） */
+    if (first && currentStr && !fullyMerged) {
+      const parts = currentStr.split("@@");
+      if (parts.length > 1) {
+        const oldText    = parts.slice(0, -1).join("");
+        const latestText = parts.at(-1);
+        first.innerHTML =
+          `<span class="merged-part">${oldText}</span><span class="newly-merged">${latestText}</span>`;
+      } else {
+        first.textContent = currentStr.replaceAll('@@', '');
+      }
+    }
   });
 }
 
-/* ---------- 全行結合完了判定 ---------- */
+/* ---------- 全行完全結合判定 ---------- */
 function allMerged() {
   return [...gameArea.children].every(lineDiv => {
     const idx   = Number(lineDiv.dataset.index);
     const first = lineDiv.querySelector(".inline-item");
-    return first &&
+    return lineDiv.classList.contains("locked-line") &&
+           first &&
            first.classList.contains("merged") &&
            first.dataset.words === originalData[idx].join("@@");
   });
 }
 
-/* ---------- 成功演出 ---------- */
+/* ---------- 完全クリア演出 ---------- */
 function flashSuccess() {
   document.body.classList.add("flash-success");
   setTimeout(() => document.body.classList.remove("flash-success"), 800);
 }
+
+/* ---------- ボタンイベント ---------- */
+startBtn.addEventListener("click", startGame);
+showBtn .addEventListener("click", () => { inputText.style.display = "block"; });
 </script>
 </body>
 </html>
