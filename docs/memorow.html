@@ -36,7 +36,7 @@
 <h3>暗記ツール</h3>
 
 <div><input type="file" id="fileInput" accept=".txt" /></div>
-<textarea id="inputText" placeholder="例: これは@@最初の@@文です\n次の@@行です"></textarea><br/>
+<textarea id="inputText" placeholder="例: これは@最初の@文です\n次の@行です"></textarea><br/>
 <button id="startBtn">スタート</button>
 <button id="showBtn">問題文表示</button>
 <div id="gameArea"></div>
@@ -75,7 +75,7 @@ function startGame() {
   if (!text) return;
 
   currentTargetIndex = 0;
-  originalData = text.split("\n").map(l => l.split("@@"));
+  originalData = text.split("\n").map(l => l.split("@"));
 
   gameArea.innerHTML = "";
   lineClickHandlers.clear();
@@ -135,7 +135,7 @@ function onLineClick(lineDiv) {
     const first = lineDiv.querySelector(".inline-item");
     const mergedLine =
       lineDiv.querySelectorAll(".inline-item").length === 1 &&
-      first.dataset.words === originalData[actual].join("@@");
+      first.dataset.words === originalData[actual].join("@");
 
     if (mergedLine) {
       currentTargetIndex++;
@@ -173,7 +173,7 @@ function onWordClick(span) {
   const answer  = originalData[lineIdx];
 
   const firstSpan  = lineDiv.querySelector(".inline-item");
-  const currentArr = firstSpan.dataset.words.split("@@");
+  const currentArr = firstSpan.dataset.words.split("@");
   const nextWord   = answer[currentArr.length];
 
   /* クリック不可条件 */
@@ -181,17 +181,17 @@ function onWordClick(span) {
 
   /* 正しい語句を選択した場合 */
   if (span.textContent === nextWord) {
-    const previousWords = currentArr.join("@@");
-    firstSpan.dataset.words = previousWords + "@@" + nextWord;
+    const previousWords = currentArr.join("@");
+    firstSpan.dataset.words = previousWords + "@" + nextWord;
 
     firstSpan.innerHTML =
-      `<span class="merged-part">${previousWords.replaceAll('@@', '')}</span>` +
+      `<span class="merged-part">${previousWords.replaceAll('@', '')}</span>` +
       `<span class="newly-merged">${nextWord}</span>`;
 
     span.classList.add("strike");
 
     /* 結合完了したら余分な span を削除 */
-    const mergedFinished = firstSpan.dataset.words === answer.join("@@");
+    const mergedFinished = firstSpan.dataset.words === answer.join("@");
     if (mergedFinished) {
       [...lineDiv.querySelectorAll(".inline-item")].forEach(item => {
         if (item !== firstSpan) lineDiv.removeChild(item);
@@ -251,7 +251,7 @@ function refreshStyles() {
     const isLocked = lineDiv.classList.contains("locked-line");
 
     const currentStr = first ? first.dataset.words : "";
-    const correctStr = originalData[idx].join("@@");
+    const correctStr = originalData[idx].join("@");
 
     /* スタイル初期化 */
     items.forEach(el => el.classList.remove("in-progress", "merged"));
@@ -266,7 +266,7 @@ function refreshStyles() {
 
     if (fullyMerged) {
       first.classList.add("merged");
-      first.textContent = currentStr.replaceAll('@@', '');
+      first.textContent = currentStr.replaceAll('@', '');
     }
     /* === 途中結合判定 === */
     else if (isLocked &&                  // ★行がロック済みであることが前提
@@ -282,14 +282,14 @@ function refreshStyles() {
 
     /* 最新結合語のハイライト描画（merged 完了以外の場合） */
     if (first && currentStr && !fullyMerged) {
-      const parts = currentStr.split("@@");
+      const parts = currentStr.split("@");
       if (parts.length > 1) {
         const oldText    = parts.slice(0, -1).join("");
         const latestText = parts.at(-1);
         first.innerHTML =
           `<span class="merged-part">${oldText}</span><span class="newly-merged">${latestText}</span>`;
       } else {
-        first.textContent = currentStr.replaceAll('@@', '');
+        first.textContent = currentStr.replaceAll('@', '');
       }
     }
   });
@@ -303,7 +303,7 @@ function allMerged() {
     return lineDiv.classList.contains("locked-line") &&
            first &&
            first.classList.contains("merged") &&
-           first.dataset.words === originalData[idx].join("@@");
+           first.dataset.words === originalData[idx].join("@");
   });
 }
 

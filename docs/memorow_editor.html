@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>問題文作成</title>
+<style>
+  /* ◾全体レイアウト ---------------------------------------- */
+  body { font-family: sans-serif; padding: 1.5rem; max-width: 820px; margin:auto;}
+  h2  { margin-top: 1.4rem; }
+  textarea { width:100%; height:100px; font-size:1rem; margin-top:.5rem; }
+  button   { margin:5px 3px; padding:.4rem .8rem; }
+
+  /* ◾プレビュー文字 ---------------------------------------- */
+  #preview { 
+    white-space: pre-wrap; border:1px solid #ccc; padding:10px; min-height:110px;
+    margin-top:.5rem; line-height:1.6;
+  }
+  #preview span        { padding:2px; cursor:pointer; user-select:none; }
+  .marked::before      { content:"@"; color:crimson; }
+
+  /* ◾改行マーク --------------------------------------------- */
+  @font-face{
+    font-family:"ReturnSymbolFallback";
+    src:local("Segoe UI Symbol"),local("Noto Sans Symbols"),local("Symbola");
+  }
+  .newline-symbol{
+    font-family:"ReturnSymbolFallback", sans-serif;
+    color:#888; margin-left:4px; cursor:default;
+  }
+</style>
+</head>
+<body>
+
+<h1>問題文作成 @分割記号 挿入</h1>
+<div><input type="file" id="fileInput_plain" accept=".txt" /></div>
+<h2>① 原文テキスト(@分割記号なし)</h2>
+<textarea id="originalText" placeholder="ここに原文を入力します。"></textarea>
+<button onclick="generateFromOriginal()">原文 → プレビュー/整形</button>
+<button onclick="downloadPlain()">原文を保存</button>
+
+<h2>② プレビュー（クリックで@分割記号挿入）</h2>
+<div id="preview"></div>
+
+<h2>③ 整形後テキスト（@分割記号つき）</h2>
+<div><input type="file" id="fileInput_formatted" accept=".txt" /></div>
+<textarea id="formattedText" placeholder="ここを編集してください"></textarea><br>
+<button onclick="generateFromFormattedToPreview()">整形後 → プレビュー/原文</button>
+<button onclick="downloadFormatted()">整形後を保存</button>
+
+<script>
+/* ---------- グローバル ---------- */
+const fileInput_plain = document.getElementById("fileInput_plain");
+const fileInput_formatted = document.getElementById("fileInput_formatted");
+let atPositions = [];      // 原文中「どの位置の前に@が入るか」を保持
+
+
+/* ---------- ① 原文 → プレビュー ---------- */
+function generateFromOriginal(){
+  const text   = document.getElementById('originalText').value;
+  const lines  = text.split('\n');                 // 行単位
+  const preview= document.getElementById('preview');
+  preview.innerHTML = '';
+  atPositions = [];
+
+  let idx = 0;                                     // 原文中の絶対位置
+
+  lines.forEach((line, lineNo)=>{
+    [...line].forEach(ch=>{
+      const span = document.createElement('span');
+      span.textContent = ch;
+      span.dataset.index = idx;
+      span.addEventListener('click', toggleAt);
+      preview.appendChild(span);
+      idx++;
+    });
+    // 改行マーク（クリック不可）
+    const nl = document.createElement('span');
+    nl.textContent = '⏎';
+    nl.className   = 'newline-symbol';
+    preview.appendChild(nl);
+
+    idx++;   // 改行(\n) も1文字としてカウント
+    if(lineNo < lines.length-1) preview.appendChild(document.createElement('br'));
+  });
+
+  updateFormattedFromPreview();
+}
+
+/* ---------- ファイル読み込み ---------- */
+fileInput_plain.addEventListener("change", e => {
+  const text   = document.getElementById('originalText');
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { text.value = ev.target.result; };
+  reader.readAsText(file, "UTF-8");
+});
+
+/* ---------- プレビューでクリックして @ 挿入/削除 ---------- */
+function toggleAt(e){
+  const idx = Number(e.target.dataset.index);
+  const i = atPositions.indexOf(idx);
+  if(i>=0){ atPositions.splice(i,1); }
+  else   { atPositions.push(idx); atPositions.sort((a,b)=>a-b); }
+  updatePreview();
+  updateFormattedFromPreview();
+}
+
+function updatePreview(){
+  document.querySelectorAll('#preview span[data-index]').forEach(span=>{
+    const idx = Number(span.dataset.index);
+    span.classList.toggle('marked', atPositions.includes(idx));
+  });
+}
+
+/* ---------- プレビュー → 整形後 ---------- */
+function updateFormattedFromPreview(){
+  const original = document.getElementById('originalText').value;
+  let result = '';
+  for(let i=0;i<original.length;i++){
+    if(atPositions.includes(i)) result += '@';
+    result += original[i];
+  }
+  document.getElementById('formattedText').value = result;
+}
+
+/* ---------- ファイル読み込み ---------- */
+fileInput_formatted.addEventListener("change", e => {
+  const text   = document.getElementById('formattedText');
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { text.value = ev.target.result; };
+  reader.readAsText(file, "UTF-8");
+});
+
+
+function generateFromPreview(){ updateFormattedFromPreview(); }
+
+/* ---------- ③ 整形後 → プレビュー再構築 ---------- */
+function generateFromFormattedToPreview(){
+  const formatted = document.getElementById('formattedText').value;
+  const preview   = document.getElementById('preview');
+  preview.innerHTML='';
+  atPositions = [];
+
+  let idx = 0;                   // 原文側インデックス（@を除いたカウント）
+
+  for(let i=0;i<formatted.length;i++){
+    const ch = formatted[i];
+    if(ch==='@'){                // @ → 次の文字の前にマーク
+      atPositions.push(idx);
+      continue;
+    }
+    if(ch==='\n'){               // 改行
+      // 改行マーク
+      const nl = document.createElement('span');
+      nl.textContent='⏎';
+      nl.className='newline-symbol';
+      preview.appendChild(nl);
+      idx++;                     // 原文にも \n がある
+      if(i < formatted.length-1) preview.appendChild(document.createElement('br'));
+      continue;
+    }
+    // 通常文字
+    const span = document.createElement('span');
+    span.textContent = ch;
+    span.dataset.index = idx;
+    span.addEventListener('click', toggleAt);
+    preview.appendChild(span);
+    idx++;
+  }
+  updatePreview();
+  // 原文側も同期
+  document.getElementById('originalText').value = formatted.replace(/@/g,'');
+}
+
+/* ---------- 整形後 → 原文 ---------- */
+//function generateFromFormattedToOriginal(){
+//  const formatted = document.getElementById('formattedText').value;
+//  document.getElementById('originalText').value = formatted.replace(/@/g,'');
+//}
+
+
+/* ---------- 原文を保存（日時付きファイル名） ---------- */
+function downloadPlain(){
+  const txt = document.getElementById('originalText').value;
+  const blob = new Blob([txt], { type:'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: getTimestampedFilename()
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- 整形後テキストを保存（日時付きファイル名） ---------- */
+function downloadFormatted(){
+  const txt = document.getElementById('formattedText').value;
+  const blob = new Blob([txt], { type:'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: getTimestampedFilename()
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- YYYYMMDD_HHMMSS 形式のファイル名を返す ---------- */
+function getTimestampedFilename(){
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm   = String(now.getMonth()+1).padStart(2,'0');
+  const dd   = String(now.getDate()).padStart(2,'0');
+  const hh   = String(now.getHours()).padStart(2,'0');
+  const mi   = String(now.getMinutes()).padStart(2,'0');
+  const ss   = String(now.getSeconds()).padStart(2,'0');
+  return `${yyyy}${mm}${dd}_${hh}${mi}${ss}.txt`;
+}
+</script>
+</body>
+</html>
