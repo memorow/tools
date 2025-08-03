@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>テキスト整形ツール</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+    input[type="text"], select { width: 100%; margin-bottom: 10px; }
+    button { margin: 5px 0; width:300px; }
+    .settings { display: none; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+<button onclick="toggleSettings()">設定表示・非表示</button><br>
+<div id="settings" class="settings">
+  <label>文字数（デフォルト:25）</label><br>
+  <input type="text" id="charLimit" value="25"><br>
+
+  <label>行数（デフォルト:16）</label><br>
+  <input type="text" id="lineLimit" value="16"><br>
+
+  <label>章区切り文字（カンマ区切り）</label><br>
+  <input type="text" id="chapterSeparators" value="第１章,第２章,第３章,１．,２．,３．"><br>
+
+  <label>章区切り文字除外（カンマ区切り）</label><br>
+  <input type="text" id="chapterExcludes" value="１．１,１．２,１．３,２．１,２．２,２．３,３．１,３．２,３．３"><br>
+
+  <label>行頭不可文字</label><br>
+  <input type="text" id="headNgChars" value="、。・"><br>
+
+  <label>行末不可文字</label><br>
+  <input type="text" id="tailNgChars" value="（「"><br>
+
+  <label>半角文字</label><br>
+  <input type="text" id="halfChars" value=" 0123456789.()[]abcdefghijklmnopqurstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\"'"><br>
+
+  <label>行番号・章累積文字数表示</label><br>
+  <select id="lineNumbering">
+    <option value="show" selected>表示</option>
+  </select><br>
+</div>
+
+
+<label>原文テキスト</label><br>
+<input type="file" id="fileInput" onchange="readFile(event)"><br>
+<textarea id="beforeText"></textarea><br>
+
+<button onclick="downloadBefore()">原文ダウンロード</button>
+<button onclick="formatText()">整形</button><br>
+
+<label>整形後テキスト（行数あり）</label><br>
+<textarea id="afterText" readonly></textarea><br>
+
+<button onclick="downloadAfterRow()">整形後（行数あり）ダウンロード</button>
+<br>
+<label>整形後テキスト（行数なし）</label><br>
+<textarea id="plainText" readonly></textarea><br>
+<button onclick="downloadAfterPlain()">整形後（行数なし）ダウンロード</button><br>
+
+<label>原稿用紙貼り付け用テキストエリア</label><br>
+<textarea id="paperText" readonly></textarea><br>
+
+<button onclick="donwnloadAfterParper()">原稿用紙貼り付け用ダウンロード</button><br>
+
+<script>
+let lastTimestamp = '';
+let isSettingsVisible = false;
+let withInfoText = '';
+let plainText = '';
+let parperText ='';
+
+function toggleSettings() {
+  const s = document.getElementById('settings');
+  isSettingsVisible = !isSettingsVisible;
+  s.style.display = isSettingsVisible ? 'block' : 'none';
+}
+function ts() {
+  const n = new Date(), p = n0 => n0.toString().padStart(2, '0');
+  return n.getFullYear() + p(n.getMonth()+1) + p(n.getDate()) + '_' + p(n.getHours()) + p(n.getMinutes()) + p(n.getSeconds());
+}
+function readFile(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => document.getElementById('beforeText').value = ev.target.result;
+  r.readAsText(f, 'UTF-8');
+}
+const listFromInput = id => document.getElementById(id).value.split(',').map(s => s.trim()).filter(Boolean);
+function isChapterLine(line, seps, excl) {
+  if (excl.some(ex => line.startsWith(ex))) return false;
+  return seps.some(sep => line.startsWith(sep));
+}
+
+function formatText() {
+  const charLimit = parseFloat(document.getElementById('charLimit').value) || 25;
+  const headSet   = new Set([...document.getElementById('headNgChars').value]);
+  const tailSet   = new Set([...document.getElementById('tailNgChars').value]);
+  const halfSet   = new Set([...document.getElementById('halfChars').value]);
+  const showInfo  = document.getElementById('lineNumbering').value === 'show';
+  const seps      = listFromInput('chapterSeparators');
+  const excl      = listFromInput('chapterExcludes');
+
+  const src = document.getElementById('beforeText').value;
+  const logical = [];
+
+  src.split(/\n/).forEach(seg => {
+    if (seg === '') { logical.push(''); return; }
+    const chars = [...seg];
+    let buf = '', len = 0;
+
+    while (chars.length > 0) {
+      let ch = chars.shift();
+      let chLen = halfSet.has(ch) ? 0.5 : 1;
+
+      if (len + chLen > charLimit) {
+        if (headSet.has(ch)) {
+          buf += ch;
+          logical.push(buf);
+          buf = ''; len = 0;
+          continue;
+        }
+
+        if (tailSet.has(buf.slice(-1))) {
+          buf += ch;
+          logical.push(buf);
+          buf = ''; len = 0;
+          continue;
+        }
+
+        logical.push(buf);
+        buf = ch;
+        len = chLen;
+        continue;
+      }
+
+      buf += ch;
+      len += chLen;
+    }
+
+    if (buf) logical.push(buf);
+  });
+
+  lastTimestamp = ts();
+  plainText = logical.join('\n');
+
+  let lineNo = 1;          // ファイル全体の連番
+  let cum    = 0;          // 章累積文字数
+  let chapLn = 0;          // 章内の行番号（1-スタート）
+
+  withInfoText = plainText.split('\n').map(line => {
+
+    // ── 章判定 ───────────────────────────
+    if (isChapterLine(line, seps, excl)) {
+      lineNo   = 1;
+      cum      = 0;
+      chapLn   = 1;           // 章先頭行＝1 行目
+    } else {
+      chapLn++;               // 以降は +1
+    }
+
+    // ── 章累積文字数計算 ──────────────────
+    //const len = [...line]
+    //           .reduce((s, ch) => s + (halfSet.has(ch) ? 0.5 : 1), 0);
+    const len = [...line].reduce((s, ch) => {
+      // 半角スペース ' ' と 全角スペース '　'(U+3000) はカウントしない
+      if (ch === ' ' || ch === '\u3000') {
+        return s;
+      } else {
+        return s + (halfSet.has(ch) ? 0.5 : 1);
+      }
+    }, 0);
+    cum += len;
+
+    // ── 行情報フラグ判定 ──────────────────
+    const limit = parseFloat(document.getElementById('lineLimit').value) || 16;
+    let flag = ' ';
+    if (chapLn === 1) {
+      flag = '*';
+    } else if (chapLn % limit === 0) {
+      flag = '-';
+    }
+
+    // ── 行情報文字列生成 ──────────────────
+    const noStr  = lineNo.toString().padStart(3, '0');
+    const cumStr = Math.round(cum).toString().padStart(4, '0');
+    lineNo++;
+
+    return `${noStr}:${cumStr}:${flag}: ${line}`;
+  }).join('\n');
+
+  document.getElementById('afterText').value = showInfo ? withInfoText : plainText;
+  document.getElementById('plainText').value=  plainText;
+  
+  // withInfoText を基にした「原稿用紙貼り付け用」表示（章判定の再実行はしない）
+  parperText= buildPaperFromWithInfo(withInfoText);
+  document.getElementById('paperText').value = parperText;
+
+}
+
+// withInfoText をもとに、1〜3章を配列化してタブ区切りで横並び文字列を返す
+// ・章判定は withInfoText のフラグ '*' のみを使用
+// ・行形式: "NNN:CCCC:flag: 本文" を想定
+// ・見出し行（*行）も章の先頭行として含める（不要なら push 前に if(flag!=='*') を追加）
+function buildPaperFromWithInfo(withInfoText) {
+  if (!withInfoText) return '';
+  const chap = [[], [], []];           // 0→1章, 1→2章, 2→3章
+  let idx = -1;                        // まだ章に入っていない
+  const lines = withInfoText.split('\n');
+  const re = /^(\d{3}):(\d{4}):(.):\s?(.*)$/;  // NNN:CCCC:flag: 本文
+
+  for (const L of lines) {
+    const m = re.exec(L);
+    if (!m) continue;
+    const flag = m[3];
+    const body = m[4];
+
+    if (flag === '*') {
+      if (idx < 2) idx++;              // 0→1章, 1→2章, 2→3章
+    }
+    if (idx >= 0 && idx < 3) {
+      chap[idx].push(body);
+    }
+  }
+
+  const maxLen = Math.max(chap[0].length, chap[1].length, chap[2].length);
+  const rows = [];
+  for (let i = 0; i < maxLen; i++) {
+    rows.push([(chap[0][i] || ''), (chap[1][i] || ''), (chap[2][i] || '')].join('\t'));
+  }
+  return rows.join('\n');
+}
+
+function saveTextToFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+function downloadBefore() {
+  const b = document.getElementById('beforeText').value;
+  if (!b) { alert("原文が空です。"); return; }
+  saveTextToFile(`${lastTimestamp}_Before.txt`, b);
+}
+function downloadAfterRow() {
+  if (!withInfoText) { alert("整形ボタンを先に押してください。"); return; }
+  saveTextToFile(`${lastTimestamp}_After_row.txt`, withInfoText);
+}
+function downloadAfterPlain() {
+  if (!plainText) { alert("整形ボタンを先に押してください。"); return; }
+  saveTextToFile(`${lastTimestamp}_After.txt`, plainText);
+}
+
+function donwnloadAfterParper() {
+  if (!parperText) { alert("整形ボタンを先に押してください。"); return; }
+  saveTextToFile(`${lastTimestamp}_Parper.txt`, parperText);
+}
+
+</script>
+</body>
+</html>
