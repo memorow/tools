@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>暗記ツール(テキスト入力）</title>
+<style>
+  body { font-family: sans-serif; margin: 20px; }
+  #modelAnswer { width: 100%; height: 300px; margin-bottom: 10px; }
+  textarea { width: 100%; height: 40px; margin-bottom: 10px; }
+  #inputArea { width:100%; }
+  #answerArea {
+    width: 100%;
+    height: 400px;
+    margin-top: 10px;
+    background: #f0f0f0;
+    white-space: pre-wrap;
+    padding: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    transition: background-color 0.5s;
+  }
+  .flash {
+    background-color: #ffffcc !important; /* 薄い黄色に一瞬光る */
+  }
+  button { font-size: .9rem; margin: 10px 10px; width:150px; height:40px }
+</style>
+</head>
+<body>
+<div id="fileArea">
+  <input type="file" id="fileInput"><br>
+  <textarea id="modelAnswer"></textarea><br>
+</div>
+
+<button style="display:none;" id="showModelBtn">問題文表示</button>
+<button style="display:none;" id="hidModelBtn">問題文非表示</button>
+<button id="startBtn">開始</button>
+<br>
+
+<div id="answerArea"></div>
+<input type="text" id="inputArea" autocomplete="off" autocapitalize="off">
+<script>
+let modelText = '';
+let currentModelIndex = 0;
+let lastColoredIndex = 0;
+
+const ignoreSet = new Set(['、', '。', '．', '　', ' ', '\n']);
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const reader = new FileReader();
+  reader.onload = function() {
+    document.getElementById('modelAnswer').value = reader.result;
+  };
+  reader.readAsText(e.target.files[0]);
+});
+
+document.getElementById('startBtn').addEventListener('click', function() {
+  modelText = document.getElementById('modelAnswer').value;
+  if( ! modelText.trim() ) return;
+  
+  currentModelIndex = 0;
+  lastColoredIndex = 0;
+  document.getElementById('answerArea').innerHTML = '';
+  document.getElementById('answerArea').classList.remove('flash');
+  document.getElementById('inputArea').value = '';
+  document.getElementById('fileArea').style.display = 'none';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('showModelBtn').style.display = 'inline';
+  document.getElementById('hidModelBtn').style.display = 'none';
+  document.getElementById('inputArea').focus();
+});
+
+document.getElementById('showModelBtn').addEventListener('click', function() {
+  document.getElementById('fileArea').style.display = 'block';
+  document.getElementById('startBtn').style.display = 'inline';
+  document.getElementById('showModelBtn').style.display = 'none';
+  document.getElementById('hidModelBtn').style.display = 'inline';
+});
+
+document.getElementById('hidModelBtn').addEventListener('click', function() {
+  document.getElementById('fileArea').style.display = 'none';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('showModelBtn').style.display = 'inline';
+  document.getElementById('hidModelBtn').style.display = 'none';
+});
+
+document.getElementById('inputArea').addEventListener('compositionend', checkInput);
+document.getElementById('inputArea').addEventListener('input', function(e){
+  if(!e.isComposing){
+    checkInput();
+  }
+});
+
+function checkInput() {
+  const inputArea = document.getElementById('inputArea');
+  let input = inputArea.value;
+  let inputIndex = 0;
+  let modelIndex = currentModelIndex;
+
+  while (inputIndex < input.length && modelIndex < modelText.length) {
+    const inputChar = input[inputIndex];
+    const modelChar = modelText[modelIndex];
+
+    if (inputChar === modelChar) {
+      modelIndex++;
+      inputIndex++;
+      continue;
+    }
+
+    const isInputIgnore = ignoreSet.has(inputChar);
+    const isModelIgnore = ignoreSet.has(modelChar);
+
+    if (isInputIgnore && isModelIgnore) {
+      modelIndex++;
+      inputIndex++;
+      continue;
+    }
+
+    if (isInputIgnore && !isModelIgnore) {
+      inputIndex++;
+      continue;
+    }
+
+    if (!isInputIgnore && isModelIgnore) {
+      modelIndex++;
+      continue;
+    }
+
+    break;
+  }
+
+  // 青色にする範囲は (lastColoredIndex ~ modelIndex)
+  const before = modelText.substring(0, lastColoredIndex);
+  const colored = modelText.substring(lastColoredIndex, modelIndex);
+
+  document.getElementById('answerArea').innerHTML = 
+    escapeHtml(before) + 
+    '<span style="color:blue;">' + escapeHtml(colored) + '</span>';
+
+  const answerArea = document.getElementById('answerArea');
+  answerArea.scrollTop = answerArea.scrollHeight;
+
+  // 完了判定（全文一致）
+  if (modelIndex === modelText.length) {
+    triggerFlashAnimation();
+  }
+
+  lastColoredIndex = modelIndex;
+  inputArea.value = input.substring(inputIndex);
+  currentModelIndex = modelIndex;
+}
+
+function triggerFlashAnimation() {
+  const answerArea = document.getElementById('answerArea');
+  answerArea.classList.add('flash');
+  setTimeout(() => {
+    answerArea.classList.remove('flash');
+  }, 500); // 0.5秒で戻す
+}
+
+function escapeHtml(str){
+  return str.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+}
+</script>
+
+</body>
+</html>
