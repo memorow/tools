@@ -6,8 +6,8 @@
   <title>暗記ツール</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
-    textarea { width: 100%; height: 100px; font-size: .9rem; }
-    button { font-size: .9rem; margin: 5px 3px; }
+    textarea { width: 100%; height: 300px; font-size: .9rem; }
+    button { font-size: .9rem; margin: 10px 10px; width:150px; height:40px }
     .line-block {
       border: 1px solid #aaa; padding: 5px 15px; margin: 10px 0;
       background: #f9f9f9; display: flex; flex-wrap: wrap; cursor: pointer;
@@ -30,6 +30,7 @@
     body.flash-success { animation: flashGreen .8s ease-in-out; }
     @keyframes flashGreen { 0% { background:#d4edda; } 100% { background:white; } }
     @keyframes flashRed   { 0% { background:#ffd6d6; } 100% { background:#eee;    } }
+
   </style>
 </head>
 <body>
@@ -120,6 +121,7 @@ function startGame() {
   fileInput.style.display = "none";
   startBtn.style.display  = "none";
   showBtn.style.display   = "inline";
+  hidBtn.style.display   = "none";
 
   refreshStyles();
   checkAutoLock();
