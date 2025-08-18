@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Memomap – Step 7.3: 4隅ラベル + 背景色（4色） + 高さ切替 + ガイド＆スナップ</title>
+  <style>
+    :root{
+      --bg:#0f1220; --panel:#171a2b; --ink:#e6e9f5; --muted:#a7acc4; --accent:#6aa8ff;
+      --node:#21263d; --node-stroke:#2e3554; --node-sel:#89b4ff; --grid:#1a1f36;
+      --edge:#5f6a95; --edge-active:#9ec1ff; --danger:#ff6b6b; --guide:#8bc1ff;
+      /* 背景色パレット（必要に応じて変更可） */
+        --c1: var(--node); /* 従来色 */
+        --c2: #2b3a67;     /* ブルー系 */
+        --c3: #2f5e4e;     /* グリーン系 */
+        --c4: #5a1a2f;     /* ブラウン系 */
+        --c5: #7b3f61;     /* 紫系 */
+        --c6: #a34d2e;     /* 赤レンガ系 */
+        --c7: #406d92;     /* 青緑系 */
+        --c8: #7a8b2e;     /* 黄緑系 */
+        --c9: #b58f35;     /* ゴールド系 */
+        --c10: #555555;    /* グレー系 */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0; font:14px/1.6 system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; color:var(--ink); background:var(--bg)}
+    .toolbar{display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 12px; background:var(--panel); border-bottom:1px solid #20243b; position:sticky; top:0; z-index:10}
+    .mode-pill{padding:6px 10px; border:1px solid #2a3153; border-radius:999px; color:var(--muted)}
+    .mode-pill strong{color:var(--ink)}
+    .btn{padding:6px 10px; background:#222744; border:1px solid #2a3153; color:var(--ink); border-radius:8px; cursor:pointer}
+    .btn[disabled]{opacity:.5; cursor:not-allowed}
+    .canvas-wrap{position:relative; height:calc(100% - 54px)}
+    svg{width:100%; height:100%; display:block; background:
+      linear-gradient(var(--bg), var(--bg)) padding-box,
+      repeating-linear-gradient(0deg, transparent, transparent 23px, var(--grid) 24px),
+      repeating-linear-gradient(90deg, transparent, transparent 23px, var(--grid) 24px);
+    }
+    .edge{stroke:var(--edge); stroke-width:2.5; fill:none; cursor:pointer}
+    .edge.active{stroke:var(--edge-active)}
+    .edge.deleting{stroke:var(--danger); stroke-dasharray:4 4}
+    .node-rect{fill:var(--node); stroke:var(--node-stroke); stroke-width:1.5; cursor:move}
+    .node-rect.selected{stroke:var(--node-sel); stroke-width:2}
+    .node-rect.connecting{stroke:var(--edge-active); stroke-dasharray:4 4}
+    .node-text{fill:var(--ink); font-size:14px; pointer-events:none}
+    .node-label, .node-label-tr, .node-label-bl, .node-label-br{fill:var(--muted); font-size:11px; pointer-events:none}
+    .floating-editor{position:absolute; min-width:220px; max-width:380px; background:var(--panel); color:var(--ink); border:1px solid #334; border-radius:10px; box-shadow:0 10px 24px rgba(0,0,0,.4); padding:10px; display:none}
+    .floating-editor textarea{width:100%; height:90px; background:#15182a; color:var(--ink); border:1px solid #2a3153; border-radius:8px; padding:8px; resize:vertical; font:14px/1.6 inherit}
+    .editor-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px}
+    .editor-grid input{width:100%}
+    .editor-row{margin-top:8px}
+    .color-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+    .swatch{width:28px; height:28px; border-radius:7px; border:2px solid transparent; cursor:pointer}
+    .swatch[data-color="var(--c1)"]{background:var(--c1)}
+    .swatch[data-color="var(--c2)"]{background:var(--c2)}
+    .swatch[data-color="var(--c3)"]{background:var(--c3)}
+    .swatch[data-color="var(--c4)"]{background:var(--c4)}
+    .swatch[data-color="var(--c5)"]{background:var(--c5)}
+    .swatch[data-color="var(--c6)"]{background:var(--c6)}
+    .swatch[data-color="var(--c7)"]{background:var(--c7)}
+    .swatch[data-color="var(--c8)"]{background:var(--c8)}
+    .swatch[data-color="var(--c9)"]{background:var(--c9)}
+    .swatch[data-color="var(--c10)"]{background:var(--c10)}
+    .swatch.selected{border-color:#fff8; box-shadow:0 0 0 2px #0006 inset}
+    .editor-actions{display:flex; gap:8px; margin-top:8px}
+    .hint{color:var(--muted)}
+    .dropzone{position:absolute; inset:8px; border:2px dashed #3a4370; border-radius:12px; display:none; align-items:center; justify-content:center; color:var(--muted); background:rgba(17,20,38,.5); backdrop-filter: blur(1px)}
+    .dropzone.show{display:flex}
+    .guide{stroke:var(--guide); stroke-width:1.5; stroke-dasharray:5 6; pointer-events:none}
+  </style>
+</head>
+<body>
+  <div class="toolbar" id="toolbar">
+    <span class="mode-pill">現在のモード：
+      <strong id="modeLabel">テキスト編集</strong>
+    </span>
+    <button class="btn" id="addNodeBtn">ノード追加 (N)</button>
+    <button class="btn" id="editBtn">テキスト編集 (E / 2回クリック)</button>
+    <button class="btn" id="moveModeBtn">移動モード (M)</button>
+    <button class="btn" id="connectModeBtn">関連線追加 (C)</button>
+    <button class="btn" id="deleteEdgeModeBtn">関連線削除 (X)</button>
+    <span class="hint">ノード削除は Delete/Backspace</span>
+    <span style="flex:1"></span>
+    <button class="btn" id="toggleSnapBtn" title="G">ガイド&スナップ: ON (G)｜Altで一時OFF／Shiftで直線移動</button>
+    <button class="btn" id="toggleHeightBtn" title="H">高さ: 標準 (H)</button>
+    <button class="btn" id="saveJsonBtn" title="Ctrl+S">保存(JSON)</button>
+    <button class="btn" id="loadJsonBtn">読み込み(JSON)</button>
+    <input type="file" id="loadFileInput" accept="application/json,.json" style="display:none" />
+  </div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <svg id="stage" viewBox="0 0 1600 900">
+      <g id="edgesLayer"></g>
+      <g id="nodesLayer"></g>
+      <g id="guidesLayer"></g>
+    </svg>
+
+    <!-- drag&drop helper -->
+    <div id="dropzone" class="dropzone">ここに JSON をドロップして読み込み</div>
+
+    <!-- Floating text editor -->
+    <div class="floating-editor" id="editor">
+      <textarea id="editorTextarea" placeholder="ノードのテキストを入力"></textarea>
+      <div class="editor-grid">
+        <input id="editorLabelTL" type="text" placeholder="左上ラベル（任意）">
+        <input id="editorLabelTR" type="text" placeholder="右上ラベル（任意）">
+        <input id="editorLabelBL" type="text" placeholder="左下ラベル（任意）">
+        <input id="editorLabelBR" type="text" placeholder="右下ラベル（任意）">
+      </div>
+
+      <div class="editor-row">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">背景色</div>
+        <div class="color-row" id="colorRow">
+          <button class="swatch" type="button" aria-label="色1" data-color="var(--c1)"></button>
+          <button class="swatch" type="button" aria-label="色2" data-color="var(--c2)"></button>
+          <button class="swatch" type="button" aria-label="色3" data-color="var(--c3)"></button>
+          <button class="swatch" type="button" aria-label="色4" data-color="var(--c4)"></button>
+          <button class="swatch" type="button" aria-label="色5" data-color="var(--c5)"></button>
+          <button class="swatch" type="button" aria-label="色6" data-color="var(--c6)"></button>
+          <button class="swatch" type="button" aria-label="色7" data-color="var(--c7)"></button>
+          <button class="swatch" type="button" aria-label="色8" data-color="var(--c8)"></button>
+          <button class="swatch" type="button" aria-label="色9" data-color="var(--c9)"></button>
+          <button class="swatch" type="button" aria-label="色10" data-color="var(--c10)"></button>
+        </div>
+      </div>
+      <div class="editor-actions">
+        <button class="btn" id="editorOk">OK</button>
+        <button class="btn" id="editorCancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // === State ===
+  const Mode = Object.freeze({ TEXT_EDIT: 'TEXT_EDIT', MOVE: 'MOVE', CONNECT: 'CONNECT', DELETE_EDGE: 'DELETE_EDGE' });
+  let mode = Mode.TEXT_EDIT;
+  // id -> {id,x,y,w,h,text, labelTL, labelTR, labelBL, labelBR, bg}
+  const nodes = new Map();
+  const edges = []; // {id, from, to}
+  let edgeSeq = 1;
+  let idSeq = 1;
+  let selectedId = null;
+  let dragInfo = null; // {id, offsetX, offsetY, baseX, baseY, startMouseX, startMouseY, axisLock}
+  let connectFromId = null;
+
+  // Height modes
+  const NODE_H_NORMAL = 60;
+  const NODE_H_COMPACT = 48;
+  let compactHeight = false;
+
+  // Snap / Guide
+  let snapEnabled = true;
+  const SNAP_TOL = 8; // px
+  let altPressed = false;
+  let shiftPressed = false;
+
+  // === DOM refs ===
+  const canvasWrap = document.getElementById('canvasWrap');
+  const stage = document.getElementById('stage');
+  const nodesLayer = document.getElementById('nodesLayer');
+  const edgesLayer = document.getElementById('edgesLayer');
+  const guidesLayer = document.getElementById('guidesLayer');
+  const modeLabel = document.getElementById('modeLabel');
+  const addNodeBtn = document.getElementById('addNodeBtn');
+  const editBtn = document.getElementById('editBtn');
+  const moveModeBtn = document.getElementById('moveModeBtn');
+  const connectModeBtn = document.getElementById('connectModeBtn');
+  const deleteEdgeModeBtn = document.getElementById('deleteEdgeModeBtn');
+  const toggleSnapBtn = document.getElementById('toggleSnapBtn');
+  const toggleHeightBtn = document.getElementById('toggleHeightBtn');
+  const saveJsonBtn = document.getElementById('saveJsonBtn');
+  const loadJsonBtn = document.getElementById('loadJsonBtn');
+  const loadFileInput = document.getElementById('loadFileInput');
+  const editor = document.getElementById('editor');
+  const editorTextarea = document.getElementById('editorTextarea');
+  const editorLabelTL = document.getElementById('editorLabelTL');
+  const editorLabelTR = document.getElementById('editorLabelTR');
+  const editorLabelBL = document.getElementById('editorLabelBL');
+  const editorLabelBR = document.getElementById('editorLabelBR');
+  const editorOk = document.getElementById('editorOk');
+  const editorCancel = document.getElementById('editorCancel');
+  const dropzone = document.getElementById('dropzone');
+  const colorRow = document.getElementById('colorRow');
+
+  // Editor-local
+  let editorBg = null; // 'var(--cN)'
+
+  // === Serialization ===
+  function serialize(){
+    return {
+      version: 4,
+      meta: { idSeq, edgeSeq, compactHeight },
+      nodes: Array.from(nodes.values()).map(n => ({
+        id:n.id, x:n.x, y:n.y, w:n.w, h:n.h, text:n.text,
+        label: n.labelTL ?? '',         // 後方互換（旧: label -> 左上）
+        labelTL: n.labelTL ?? '',
+        labelTR: n.labelTR ?? '',
+        labelBL: n.labelBL ?? '',
+        labelBR: n.labelBR ?? '',
+        bg: n.bg ?? null
+      })),
+      edges: edges.map(e => ({ id:e.id, from:e.from, to:e.to }))
+    };
+  }
+
+  function downloadJSON(){
+    const data = serialize();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g,'-');
+    a.href = url; a.download = `memomap-${ts}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function clearAll(){
+    nodesLayer.innerHTML = '';
+    edgesLayer.innerHTML = '';
+    guidesLayer.innerHTML = '';
+    nodes.clear();
+    edges.length = 0;
+    selectedId = null;
+    connectFromId = null;
+  }
+
+  function restore(obj){
+    if (!obj || !Array.isArray(obj.nodes) || !Array.isArray(obj.edges)){
+      throw new Error('不正なJSON: nodes/edges が見つかりません');
+    }
+    clearAll();
+    compactHeight = !!obj?.meta?.compactHeight;
+    for (const n of obj.nodes){
+      const id = String(n.id);
+      const defH = compactHeight ? NODE_H_COMPACT : NODE_H_NORMAL;
+      const node = {
+        id,
+        x:+n.x||0, y:+n.y||0, w:+n.w||160, h:+n.h||defH,
+        text:String(n.text ?? ''),
+        labelTL:String(n.labelTL ?? n.label ?? ''),
+        labelTR:String(n.labelTR ?? ''),
+        labelBL:String(n.labelBL ?? ''),
+        labelBR:String(n.labelBR ?? ''),
+        bg: n.bg ?? null
+      };
+      nodes.set(id, node);
+      renderNode(node);
+    }
+    for (const e of obj.edges){
+      const from = String(e.from), to = String(e.to);
+      if (nodes.has(from) && nodes.has(to)) edges.push({ id:String(e.id ?? ''), from, to });
+    }
+    const maxNodeId = Math.max(0, ...Array.from(nodes.keys()).map(k => +k || 0));
+    const maxEdgeId = Math.max(0, ...edges.map(e => +e.id || 0));
+    idSeq = Math.max(maxNodeId + 1, obj?.meta?.idSeq ? +obj.meta.idSeq : 1);
+    edgeSeq = Math.max(maxEdgeId + 1, obj?.meta?.edgeSeq ? +obj.meta.edgeSeq : 1);
+    renderAllEdges();
+    updateModeUI();
+    updateHeightBtnUI();
+  }
+
+  async function handleFile(file){
+    try{
+      const text = await file.text();
+      const obj = JSON.parse(text);
+      restore(obj);
+    }catch(err){
+      alert('読み込みエラー: ' + (err?.message || err));
+      console.error(err);
+    }
+  }
+
+  // === Helpers ===
+  function defaultNodeHeight(){ return compactHeight ? NODE_H_COMPACT : NODE_H_NORMAL; }
+
+  function createNode(x, y, text = '新しいノード', labelTL = '', labelTR = '', labelBL = '', labelBR = '') {
+    const id = String(idSeq++);
+    const w = 160, h = defaultNodeHeight();
+    const state = { id, x, y, w, h, text, labelTL, labelTR, labelBL, labelBR, bg:null };
+    nodes.set(id, state);
+    renderNode(state);
+    selectNode(id);
+    renderAllEdges();
+  }
+
+  function deleteNode(id){
+    if (!id || !nodes.has(id)) return;
+    const g = nodeGroupEl(id); if (g) g.remove();
+    nodes.delete(id);
+    for (let i = edges.length - 1; i >= 0; i--) {
+      if (edges[i].from === id || edges[i].to === id) edges.splice(i,1);
+    }
+    if (selectedId === id) selectedId = null;
+    renderAllEdges();
+  }
+
+  function deleteEdge(id){
+    const idx = edges.findIndex(e => e.id === id);
+    if (idx !== -1){ edges.splice(idx,1); renderAllEdges(); }
+  }
+
+  function nodeGroupEl(id){ return nodesLayer.querySelector(`[data-id="${id}"]`); }
+
+  function renderNode(n) {
+    let g = nodeGroupEl(n.id);
+    if (!g) {
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('data-id', n.id);
+      g.style.cursor = 'pointer';
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('rx', 14); rect.setAttribute('ry', 14);
+      rect.classList.add('node-rect');
+      g.appendChild(rect);
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.classList.add('node-text');
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('dominant-baseline','middle');
+      g.appendChild(text);
+      const labelTL = document.createElementNS('http://www.w3.org/2000/svg','text');
+      labelTL.setAttribute('class','node-label');           // 左上
+      g.appendChild(labelTL);
+      const labelTR = document.createElementNS('http://www.w3.org/2000/svg','text');
+      labelTR.setAttribute('class','node-label-tr');        // 右上
+      labelTR.setAttribute('text-anchor','end');
+      g.appendChild(labelTR);
+      const labelBL = document.createElementNS('http://www.w3.org/2000/svg','text');
+      labelBL.setAttribute('class','node-label-bl');        // 左下
+      g.appendChild(labelBL);
+      const labelBR = document.createElementNS('http://www.w3.org/2000/svg','text');
+      labelBR.setAttribute('class','node-label-br');        // 右下
+      labelBR.setAttribute('text-anchor','end');
+      g.appendChild(labelBR);
+
+      let lastClickAt = 0;
+      g.addEventListener('mousedown', (e) => {
+        if (mode === Mode.MOVE) {
+          const current = nodes.get(g.dataset.id);
+          dragInfo = {
+            id: current.id,
+            offsetX: e.offsetX - current.x,
+            offsetY: e.offsetY - current.y,
+            baseX: current.x,
+            baseY: current.y,
+            startMouseX: e.offsetX,
+            startMouseY: e.offsetY,
+            axisLock: null
+          };
+          selectNode(current.id);
+        }
+      });
+
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nid = n.id;
+        selectNode(nid);
+        const now = performance.now();
+        if (mode === Mode.CONNECT) {
+          handleConnectClick(nid);
+        } else if (mode === Mode.TEXT_EDIT) {
+          if (now - lastClickAt < 320) openEditor(nid);
+        }
+        lastClickAt = now;
+      });
+
+      nodesLayer.appendChild(g);
+    }
+    const rect = g.children[0];
+    const text = g.children[1];
+    rect.setAttribute('x', n.x); rect.setAttribute('y', n.y);
+    rect.setAttribute('width', n.w); rect.setAttribute('height', n.h);
+    // 背景色：n.bg があれば優先、無ければ従来色
+    rect.removeAttribute('fill');          // 念のため属性は消す
+    rect.style.fill = n.bg ? n.bg : '';    // 未指定ならCSS既定（var(--node)）に任せる
+    text.setAttribute('x', n.x + n.w/2); text.setAttribute('y', n.y + n.h/2);
+    text.textContent = n.text;
+
+    const labelTL = g.querySelector('.node-label');
+    if (labelTL){
+      labelTL.setAttribute('x', n.x + 6);
+      labelTL.setAttribute('y', n.y + 16);
+      labelTL.textContent = n.labelTL ?? '';
+    }
+    const labelTR = g.querySelector('.node-label-tr');
+    if (labelTR){
+      labelTR.setAttribute('x', n.x + n.w - 6);
+      labelTR.setAttribute('y', n.y + 16);
+      labelTR.textContent = n.labelTR ?? '';
+    }
+    const labelBL = g.querySelector('.node-label-bl');
+    if (labelBL){
+      labelBL.setAttribute('x', n.x + 6);
+      labelBL.setAttribute('y', n.y + n.h - 8);
+      labelBL.textContent = n.labelBL ?? '';
+    }
+    const labelBR = g.querySelector('.node-label-br');
+    if (labelBR){
+      labelBR.setAttribute('x', n.x + n.w - 6);
+      labelBR.setAttribute('y', n.y + n.h - 8);
+      labelBR.textContent = n.labelBR ?? '';
+    }
+  }
+
+  function selectNode(id) {
+    if (selectedId && selectedId !== connectFromId) {
+      const gPrev = nodeGroupEl(selectedId)?.querySelector('.node-rect');
+      gPrev && gPrev.classList.remove('selected');
+    }
+    selectedId = id;
+    if (selectedId && selectedId !== connectFromId) {
+      const g = nodeGroupEl(selectedId)?.querySelector('.node-rect');
+      g && g.classList.add('selected');
+    }
+  }
+
+  function markConnecting(id, on){
+    const rect = nodeGroupEl(id)?.querySelector('.node-rect');
+    if (!rect) return;
+    rect.classList.toggle('connecting', !!on);
+  }
+
+  function centerOf(n){ return { cx: n.x + n.w/2, cy: n.y + n.h/2 }; }
+
+  function renderAllEdges(){
+    edgesLayer.innerHTML = '';
+    for (const e of edges) {
+      const from = nodes.get(e.from); const to = nodes.get(e.to);
+      if (!from || !to) continue;
+      const {cx: x1, cy: y1} = centerOf(from);
+      const {cx: x2, cy: y2} = centerOf(to);
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('class','edge');
+      line.dataset.id = e.id || (e.id = String(edgeSeq++));
+      if (mode === Mode.DELETE_EDGE) line.classList.add('deleting');
+      line.addEventListener('click', () => { if (mode === Mode.DELETE_EDGE) deleteEdge(e.id); });
+      edgesLayer.appendChild(line);
+    }
+  }
+
+  function addEdge(fromId, toId){
+    if (fromId === toId) return;
+    if (edges.some(e => e.from===fromId && e.to===toId)) return;
+    const id = String(edgeSeq++);
+    edges.push({id, from: fromId, to: toId});
+    renderAllEdges();
+  }
+
+  function handleConnectClick(nid){
+    if (!connectFromId) { connectFromId = nid; markConnecting(connectFromId, true); updateModeUI(); return; }
+    addEdge(connectFromId, nid);
+    markConnecting(connectFromId, false);
+    connectFromId = null;
+    updateModeUI();
+  }
+
+  function openEditor(id) {
+    if (!id) return;
+    const n = nodes.get(id);
+    if (!n) return;
+    setMode(Mode.TEXT_EDIT);
+    const rectEl = nodeGroupEl(id)?.querySelector('rect');
+    if (!rectEl) return;
+    const bbox = rectEl.getBoundingClientRect();
+    editor.style.left = Math.round(bbox.left + window.scrollX) + 'px';
+    editor.style.top  = Math.round(bbox.bottom + 6 + window.scrollY) + 'px';
+    editorTextarea.value = n.text;
+    editorLabelTL.value = n.labelTL ?? '';
+    editorLabelTR.value = n.labelTR ?? '';
+    editorLabelBL.value = n.labelBL ?? '';
+    editorLabelBR.value = n.labelBR ?? '';
+    // 背景色スウォッチの選択状態を反映
+    editorBg = n.bg || 'var(--c1)';
+    updateSwatchSelection();
+    editor.style.display = 'block';
+    editorTextarea.focus();
+    editorTextarea.select();
+  }
+
+  function closeEditor(commit) {
+    if (editor.style.display !== 'block') return;
+    const id = selectedId;
+    const n = id && nodes.get(id);
+    if (commit && n) {
+      const newText = editorTextarea.value.trim();
+      if (newText) { n.text = newText; }
+      n.labelTL = editorLabelTL.value.trim();
+      n.labelTR = editorLabelTR.value.trim();
+      n.labelBL = editorLabelBL.value.trim();
+      n.labelBR = editorLabelBR.value.trim();
+      n.bg = editorBg || null;
+      renderNode(n);
+    }
+    editor.style.display = 'none';
+  }
+
+  function stagePointFromClient(clientX, clientY) {
+    const pt = stage.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = stage.getScreenCTM();
+    return pt.matrixTransform(ctm.inverse());
+  }
+
+  // ===== Guides & Snap =====
+  function getTargets(excludeId){
+    const vx = []; const vy = [];
+    nodes.forEach(n => {
+      if (n.id === excludeId) return;
+      vx.push(n.x, n.x + n.w/2, n.x + n.w);
+      vy.push(n.y, n.y + n.h/2, n.y + n.h);
+    });
+    return {vx, vy};
+  }
+
+  function drawGuides(vxHit, vyHit){
+    guidesLayer.innerHTML = '';
+    const vb = stage.viewBox.baseVal;
+    if (vxHit != null){
+      const v = document.createElementNS('http://www.w3.org/2000/svg','line');
+      v.setAttribute('x1', vxHit); v.setAttribute('x2', vxHit);
+      v.setAttribute('y1', vb.y); v.setAttribute('y2', vb.y + vb.height);
+      v.setAttribute('class','guide');
+      guidesLayer.appendChild(v);
+    }
+    if (vyHit != null){
+      const h = document.createElementNS('http://www.w3.org/2000/svg','line');
+      h.setAttribute('y1', vyHit); h.setAttribute('y2', vyHit);
+      h.setAttribute('x1', vb.x); h.setAttribute('x2', vb.x + vb.width);
+      h.setAttribute('class','guide');
+      guidesLayer.appendChild(h);
+    }
+  }
+
+  function applySnap(n, rawX, rawY){
+    if (!snapEnabled || altPressed) { drawGuides(null, null); return {x: rawX, y: rawY}; }
+    const {vx, vy} = getTargets(n.id);
+
+    const candX = [rawX, rawX + n.w/2, rawX + n.w];
+    let bestDX = Infinity, snapToX = null;
+    for (const target of vx){
+      for (let i=0;i<3;i++){
+        const dx = target - candX[i];
+        const adx = Math.abs(dx);
+        if (adx < Math.abs(bestDX) && adx <= SNAP_TOL){ bestDX = dx; snapToX = target; }
+      }
+    }
+    let snappedX = rawX;
+    if (snapToX !== null){ snappedX = rawX + bestDX; }
+
+    const candY = [rawY, rawY + n.h/2, rawY + n.h];
+    let bestDY = Infinity, snapToY = null;
+    for (const target of vy){
+      for (let i=0;i<3;i++){
+        const dy = target - candY[i];
+        const ady = Math.abs(dy);
+        if (ady < Math.abs(bestDY) && ady <= SNAP_TOL){ bestDY = dy; snapToY = target; }
+      }
+    }
+    let snappedY = rawY;
+    if (snapToY !== null){ snappedY = rawY + bestDY; }
+
+    drawGuides(snapToX, snapToY);
+    return {x: snappedX, y: snappedY};
+  }
+
+  function clearGuides(){ guidesLayer.innerHTML=''; }
+
+  function setMode(newMode){
+    if (mode === Mode.CONNECT && connectFromId){
+      markConnecting(connectFromId, false); connectFromId = null;
+    }
+    mode = newMode;
+    updateModeUI();
+    renderAllEdges();
+    if (mode !== Mode.MOVE) clearGuides();
+  }
+
+  function updateModeUI(){
+    if (mode === Mode.TEXT_EDIT) modeLabel.textContent = 'テキスト編集';
+    if (mode === Mode.MOVE) modeLabel.textContent = '移動モード（Altでスナップ無効 / Shiftで直線移動）';
+    if (mode === Mode.CONNECT) modeLabel.textContent = connectFromId ? `関連線追加: 開始ノードを選択済み → 次のノードをクリック` : '関連線追加';
+    if (mode === Mode.DELETE_EDGE) modeLabel.textContent = '関連線削除: 線をクリックで削除 (Escで解除)';
+    toggleSnapBtn.textContent = `ガイド&スナップ: ${snapEnabled ? 'ON' : 'OFF'} (G)｜Altで一時OFF／Shiftで直線移動`;
+  }
+
+  function updateHeightBtnUI(){
+    toggleHeightBtn.textContent = `高さ: ${compactHeight ? 'コンパクト' : '標準'} (H)`;
+  }
+
+  function toggleHeightMode(){
+    compactHeight = !compactHeight;
+    const newH = defaultNodeHeight();
+    nodes.forEach(n => {
+      const centerY = n.y + n.h/2;
+      n.h = newH;
+      n.y = centerY - n.h/2;
+      renderNode(n);
+    });
+    renderAllEdges();
+    updateHeightBtnUI();
+  }
+
+  // === Init sample nodes ===
+  createNode(420, 240, '中心トピック', 'L上', 'R上', '', 'R下');
+  createNode(680, 420, 'サブトピック', '', '', 'L下', '');
+  addEdge('1','2');
+
+  // === Events ===
+  addNodeBtn.addEventListener('click', () => {
+    const rect = stage.getBoundingClientRect();
+    const { x, y } = stagePointFromClient(rect.left + rect.width/2, rect.top + rect.height/2);
+    createNode(x - 80, y - defaultNodeHeight()/2);
+  });
+
+  editBtn.addEventListener('click', () => setMode(Mode.TEXT_EDIT));
+  moveModeBtn.addEventListener('click', () => setMode(mode === Mode.MOVE ? Mode.TEXT_EDIT : Mode.MOVE));
+  connectModeBtn.addEventListener('click', () => setMode(mode === Mode.CONNECT ? Mode.TEXT_EDIT : Mode.CONNECT));
+  deleteEdgeModeBtn.addEventListener('click', () => setMode(mode === Mode.DELETE_EDGE ? Mode.TEXT_EDIT : Mode.DELETE_EDGE));
+  toggleSnapBtn.addEventListener('click', () => { snapEnabled = !snapEnabled; updateModeUI(); });
+  toggleHeightBtn.addEventListener('click', () => toggleHeightMode());
+
+  editorOk.addEventListener('click', () => closeEditor(true));
+  editorCancel.addEventListener('click', () => closeEditor(false));
+
+  // カラースウォッチ
+  function updateSwatchSelection(){
+    const swatches = colorRow.querySelectorAll('.swatch');
+    swatches.forEach(s => {
+      s.classList.toggle('selected', s.dataset.color === editorBg);
+    });
+  }
+  colorRow.addEventListener('click', (e) => {
+    const btn = e.target.closest('.swatch');
+    if (!btn) return;
+    editorBg = btn.dataset.color; // 'var(--cN)'
+    updateSwatchSelection();
+  });
+
+  // Save / Load
+  saveJsonBtn.addEventListener('click', downloadJSON);
+  loadJsonBtn.addEventListener('click', () => loadFileInput.click());
+  loadFileInput.addEventListener('change', async (e) => {
+    const f = e.target.files?.[0]; if (!f) return; await handleFile(f); e.target.value = '';
+  });
+
+  // Drag & Drop JSON
+  ;['dragenter','dragover'].forEach(type => {
+    canvasWrap.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.add('show'); });
+  });
+  ;['dragleave','drop'].forEach(type => {
+    canvasWrap.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('show'); });
+  });
+  canvasWrap.addEventListener('drop', async (e) => {
+    const f = e.dataTransfer?.files?.[0]; if (f) await handleFile(f);
+  });
+
+  // Key state for snap modifiers
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt') altPressed = true;
+    if (e.key === 'Shift') shiftPressed = true;
+
+    // Save shortcut
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); downloadJSON(); return; }
+
+    if (editor.style.display === 'block') {
+      if ((e.key === 'Enter' && (e.ctrlKey || !e.shiftKey))){ e.preventDefault(); closeEditor(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeEditor(false); }
+      return;
+    }
+
+    if (e.key === 'n' || e.key === 'N') addNodeBtn.click();
+    else if (e.key === 'e' || e.key === 'E') setMode(Mode.TEXT_EDIT);
+    else if (e.key === 'm' || e.key === 'M') setMode(mode === Mode.MOVE ? Mode.TEXT_EDIT : Mode.MOVE);
+    else if (e.key === 'c' || e.key === 'C') setMode(mode === Mode.CONNECT ? Mode.TEXT_EDIT : Mode.CONNECT);
+    else if (e.key === 'x' || e.key === 'X') setMode(mode === Mode.DELETE_EDGE ? Mode.TEXT_EDIT : Mode.DELETE_EDGE);
+    else if (e.key === 'g' || e.key === 'G') { snapEnabled = !snapEnabled; updateModeUI(); }
+    else if (e.key === 'h' || e.key === 'H') { toggleHeightMode(); }
+    else if (e.key === 'Escape') {
+      if (connectFromId){ markConnecting(connectFromId,false); connectFromId=null; updateModeUI(); }
+      else if (mode === Mode.DELETE_EDGE) setMode(Mode.TEXT_EDIT);
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) { e.preventDefault(); deleteNode(selectedId); }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt') altPressed = false;
+    if (e.key === 'Shift') { shiftPressed = false; if (dragInfo) dragInfo.axisLock = null; }
+  });
+
+  stage.addEventListener('mousemove', (e) => {
+    if (mode === Mode.MOVE && dragInfo) {
+      const n = nodes.get(dragInfo.id);
+      const mouseX = e.offsetX, mouseY = e.offsetY;
+
+      let rawX = mouseX - dragInfo.offsetX;
+      let rawY = mouseY - dragInfo.offsetY;
+
+      if (shiftPressed){
+        if (!dragInfo.axisLock){
+          const dx = Math.abs(mouseX - dragInfo.startMouseX);
+          const dy = Math.abs(mouseY - dragInfo.startMouseY);
+          dragInfo.axisLock = dx >= dy ? 'x' : 'y';
+        }
+        if (dragInfo.axisLock === 'x') rawY = dragInfo.baseY; else rawX = dragInfo.baseX;
+      }
+
+      const {x, y} = applySnap(n, rawX, rawY);
+      n.x = x; n.y = y;
+      renderNode(n);
+      renderAllEdges();
+    }
+  });
+
+  stage.addEventListener('mouseup', () => { dragInfo = null; clearGuides(); });
+  stage.addEventListener('mouseleave', () => { dragInfo = null; clearGuides(); });
+  stage.addEventListener('click', (e) => { if (e.target === stage) selectNode(null); });
+
+  // Initialize UI states
+  updateHeightBtnUI();
+})();
+</script>
+</body>
+</html>
