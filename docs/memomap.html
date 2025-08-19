@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Memomap – Step 7.3: 4隅ラベル + 背景色（4色） + 高さ切替 + ガイド＆スナップ</title>
+  <title>Memomap</title>
   <style>
     :root{
       --bg:#0f1220; --panel:#171a2b; --ink:#e6e9f5; --muted:#a7acc4; --accent:#6aa8ff;
@@ -12,12 +12,12 @@
       /* 背景色パレット（必要に応じて変更可） */
         --c1: var(--node); /* 従来色 */
         --c2: #2b3a67;     /* ブルー系 */
-        --c3: #2f5e4e;     /* グリーン系 */
-        --c4: #5a1a2f;     /* ブラウン系 */
-        --c5: #7b3f61;     /* 紫系 */
-        --c6: #a34d2e;     /* 赤レンガ系 */
-        --c7: #406d92;     /* 青緑系 */
-        --c8: #7a8b2e;     /* 黄緑系 */
+        --c3: #406d92;     /* 青緑系 */
+        --c4: #2f5e4e;     /* グリーン系 */
+        --c5: #7a8b2e;     /* 黄緑系 */
+        --c6: #5a1a2f;     /* ブラウン系 */
+        --c7: #7b3f61;     /* 紫系 */
+        --c8: #a34d2e;     /* 赤レンガ系 */
         --c9: #b58f35;     /* ゴールド系 */
         --c10: #555555;    /* グレー系 */
     }
@@ -66,6 +66,7 @@
     .dropzone{position:absolute; inset:8px; border:2px dashed #3a4370; border-radius:12px; display:none; align-items:center; justify-content:center; color:var(--muted); background:rgba(17,20,38,.5); backdrop-filter: blur(1px)}
     .dropzone.show{display:flex}
     .guide{stroke:var(--guide); stroke-width:1.5; stroke-dasharray:5 6; pointer-events:none}
+    .floating-editor{ max-height: calc(100% - 16px); overflow: auto; }
   </style>
 </head>
 <body>
@@ -131,8 +132,8 @@
 <script>
 (() => {
   // === State ===
-  const Mode = Object.freeze({ TEXT_EDIT: 'TEXT_EDIT', MOVE: 'MOVE', CONNECT: 'CONNECT', DELETE_EDGE: 'DELETE_EDGE' });
-  let mode = Mode.TEXT_EDIT;
+  const Mode = Object.freeze({ EDIT_MOVE: 'EDIT_MOVE', CONNECT: 'CONNECT', DELETE_EDGE: 'DELETE_EDGE' });
+  let mode = Mode.EDIT_MOVE;
   // id -> {id,x,y,w,h,text, labelTL, labelTR, labelBL, labelBR, bg}
   const nodes = new Map();
   const edges = []; // {id, from, to}
@@ -180,6 +181,12 @@
   const editorCancel = document.getElementById('editorCancel');
   const dropzone = document.getElementById('dropzone');
   const colorRow = document.getElementById('colorRow');
+  // --- UI adjustments for unified EDIT+MOVE mode ---
+  try {
+    editBtn.textContent = '編集＋移動 (E/M / 2回クリックで編集)';
+    moveModeBtn.style.display = 'none'; // hide legacy move toggle button
+  } catch (e) {}
+
 
   // Editor-local
   let editorBg = null; // 'var(--cN)'
@@ -332,7 +339,7 @@
 
       let lastClickAt = 0;
       g.addEventListener('mousedown', (e) => {
-        if (mode === Mode.MOVE) {
+        if (mode === Mode.EDIT_MOVE) {
           const current = nodes.get(g.dataset.id);
           dragInfo = {
             id: current.id,
@@ -355,7 +362,7 @@
         const now = performance.now();
         if (mode === Mode.CONNECT) {
           handleConnectClick(nid);
-        } else if (mode === Mode.TEXT_EDIT) {
+        } else if (mode === Mode.EDIT_MOVE) {
           if (now - lastClickAt < 320) openEditor(nid);
         }
         lastClickAt = now;
@@ -457,24 +464,64 @@
     if (!id) return;
     const n = nodes.get(id);
     if (!n) return;
-    setMode(Mode.TEXT_EDIT);
+    setMode(Mode.EDIT_MOVE);
+
     const rectEl = nodeGroupEl(id)?.querySelector('rect');
     if (!rectEl) return;
-    const bbox = rectEl.getBoundingClientRect();
-    editor.style.left = Math.round(bbox.left + window.scrollX) + 'px';
-    editor.style.top  = Math.round(bbox.bottom + 6 + window.scrollY) + 'px';
+
+    // 位置計算は「canvasWrap（position:relative）」基準で行う
+    const wrapRect = canvasWrap.getBoundingClientRect();
+    const nodeRect = rectEl.getBoundingClientRect();
+
+    // 一旦表示してサイズを測る（不可視でチラつき防止）
+    editor.style.display = 'block';
+    editor.style.visibility = 'hidden';
+
+    // 値の投入（ここで高さが確定する）
     editorTextarea.value = n.text;
     editorLabelTL.value = n.labelTL ?? '';
     editorLabelTR.value = n.labelTR ?? '';
     editorLabelBL.value = n.labelBL ?? '';
     editorLabelBR.value = n.labelBR ?? '';
-    // 背景色スウォッチの選択状態を反映
     editorBg = n.bg || 'var(--c1)';
     updateSwatchSelection();
-    editor.style.display = 'block';
+
+    const ew = editor.offsetWidth;
+    const eh = editor.offsetHeight;
+
+    const pad = 6;           // ノードとの間隔
+    const margin = 8;        // 画面端マージン
+    const wrapW = wrapRect.width;
+    const wrapH = wrapRect.height;
+
+    // 基本はノードの「下」に出す
+    let left = (nodeRect.left - wrapRect.left) + canvasWrap.scrollLeft;
+    let top  = (nodeRect.bottom - wrapRect.top) + canvasWrap.scrollTop + pad;
+
+    // 下にはみ出すなら「上」に切り替え
+    const bottomY = top + eh;
+    if (bottomY > canvasWrap.scrollTop + wrapH - margin) {
+      top = (nodeRect.top - wrapRect.top) + canvasWrap.scrollTop - eh - pad;
+    }
+
+    // さらに上下をクランプ（収まらない場合は端に寄せる）
+    top = Math.max(canvasWrap.scrollTop + margin,
+                    Math.min(top, canvasWrap.scrollTop + wrapH - eh - margin));
+
+    // 左右もクランプ（右にはみ出す場合は左に寄せる）
+    left = Math.max(canvasWrap.scrollLeft + margin,
+                     Math.min(left, canvasWrap.scrollLeft + wrapW - ew - margin));
+
+    // 決定位置を反映
+    editor.style.left = Math.round(left) + 'px';
+    editor.style.top  = Math.round(top) + 'px';
+    editor.style.visibility = 'visible';
+
+    // 入力状態
     editorTextarea.focus();
     editorTextarea.select();
   }
+
 
   function closeEditor(commit) {
     if (editor.style.display !== 'block') return;
@@ -571,15 +618,18 @@
     mode = newMode;
     updateModeUI();
     renderAllEdges();
-    if (mode !== Mode.MOVE) clearGuides();
+    if (mode !== Mode.EDIT_MOVE) clearGuides();
   }
 
+  
   function updateModeUI(){
-    if (mode === Mode.TEXT_EDIT) modeLabel.textContent = 'テキスト編集';
-    if (mode === Mode.MOVE) modeLabel.textContent = '移動モード（Altでスナップ無効 / Shiftで直線移動）';
-    if (mode === Mode.CONNECT) modeLabel.textContent = connectFromId ? `関連線追加: 開始ノードを選択済み → 次のノードをクリック` : '関連線追加';
-    if (mode === Mode.DELETE_EDGE) modeLabel.textContent = '関連線削除: 線をクリックで削除 (Escで解除)';
-    toggleSnapBtn.textContent = `ガイド&スナップ: ${snapEnabled ? 'ON' : 'OFF'} (G)｜Altで一時OFF／Shiftで直線移動`;
+    let label = '';
+    if (mode === Mode.EDIT_MOVE) label = '編集＋移動（Altでスナップ一時OFF／Shiftで直線移動／ダブルクリックで編集）';
+    if (mode === Mode.CONNECT) label = connectFromId ? '関連線追加: 開始ノードを選択済み → 次のノードをクリック' : '関連線追加';
+    if (mode === Mode.DELETE_EDGE) label = '関連線削除: 線をクリックで削除 (Escで解除)';
+    modeLabel.textContent = label;
+    toggleSnapBtn.textContent = 'ガイド&スナップ: ' + (snapEnabled ? 'ON' : 'OFF') + ' (G)｜Altで一時OFF／Shiftで直線移動';
+    toggleSnapBtn.textContent = 'ガイド&スナップ: ' + (snapEnabled ? 'ON' : 'OFF') + ' (G)｜Altで一時OFF／Shiftで直線移動';
   }
 
   function updateHeightBtnUI(){
@@ -611,10 +661,10 @@
     createNode(x - 80, y - defaultNodeHeight()/2);
   });
 
-  editBtn.addEventListener('click', () => setMode(Mode.TEXT_EDIT));
-  moveModeBtn.addEventListener('click', () => setMode(mode === Mode.MOVE ? Mode.TEXT_EDIT : Mode.MOVE));
-  connectModeBtn.addEventListener('click', () => setMode(mode === Mode.CONNECT ? Mode.TEXT_EDIT : Mode.CONNECT));
-  deleteEdgeModeBtn.addEventListener('click', () => setMode(mode === Mode.DELETE_EDGE ? Mode.TEXT_EDIT : Mode.DELETE_EDGE));
+  editBtn.addEventListener('click', () => setMode(Mode.EDIT_MOVE));
+  moveModeBtn.addEventListener('click', () => setMode(Mode.EDIT_MOVE));
+  connectModeBtn.addEventListener('click', () => setMode(mode === Mode.CONNECT ? Mode.EDIT_MOVE : Mode.CONNECT));
+  deleteEdgeModeBtn.addEventListener('click', () => setMode(mode === Mode.DELETE_EDGE ? Mode.EDIT_MOVE : Mode.DELETE_EDGE));
   toggleSnapBtn.addEventListener('click', () => { snapEnabled = !snapEnabled; updateModeUI(); });
   toggleHeightBtn.addEventListener('click', () => toggleHeightMode());
 
@@ -668,15 +718,15 @@
     }
 
     if (e.key === 'n' || e.key === 'N') addNodeBtn.click();
-    else if (e.key === 'e' || e.key === 'E') setMode(Mode.TEXT_EDIT);
-    else if (e.key === 'm' || e.key === 'M') setMode(mode === Mode.MOVE ? Mode.TEXT_EDIT : Mode.MOVE);
-    else if (e.key === 'c' || e.key === 'C') setMode(mode === Mode.CONNECT ? Mode.TEXT_EDIT : Mode.CONNECT);
-    else if (e.key === 'x' || e.key === 'X') setMode(mode === Mode.DELETE_EDGE ? Mode.TEXT_EDIT : Mode.DELETE_EDGE);
+    else if (e.key === 'e' || e.key === 'E') setMode(Mode.EDIT_MOVE);
+    else if (e.key === 'm' || e.key === 'M') setMode(Mode.EDIT_MOVE);
+    else if (e.key === 'c' || e.key === 'C') setMode(mode === Mode.CONNECT ? Mode.EDIT_MOVE : Mode.CONNECT);
+    else if (e.key === 'x' || e.key === 'X') setMode(mode === Mode.DELETE_EDGE ? Mode.EDIT_MOVE : Mode.DELETE_EDGE);
     else if (e.key === 'g' || e.key === 'G') { snapEnabled = !snapEnabled; updateModeUI(); }
     else if (e.key === 'h' || e.key === 'H') { toggleHeightMode(); }
     else if (e.key === 'Escape') {
       if (connectFromId){ markConnecting(connectFromId,false); connectFromId=null; updateModeUI(); }
-      else if (mode === Mode.DELETE_EDGE) setMode(Mode.TEXT_EDIT);
+      else if (mode === Mode.DELETE_EDGE) setMode(Mode.EDIT_MOVE);
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) { e.preventDefault(); deleteNode(selectedId); }
   });
@@ -687,7 +737,7 @@
   });
 
   stage.addEventListener('mousemove', (e) => {
-    if (mode === Mode.MOVE && dragInfo) {
+    if (mode === Mode.EDIT_MOVE && dragInfo) {
       const n = nodes.get(dragInfo.id);
       const mouseX = e.offsetX, mouseY = e.offsetY;
 
